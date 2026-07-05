@@ -1,0 +1,14 @@
+# Lets the panel run from a plain folder upload (public_html/admin)
+# without touching the document root: every request is routed into
+# Laravel's public/ directory. Ignored by `php artisan serve` locally.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_URI} !/public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# Never serve the environment file, even if rewriting is off.
+<Files .env>
+    Require all denied
+</Files>
