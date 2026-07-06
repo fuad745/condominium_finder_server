@@ -19,6 +19,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // The host fronts the app with a reverse proxy (openresty). Without
+        // this, Laravel sees the proxy's IP for every visitor, so per-IP
+        // rate limits on the auth routes become one shared global bucket.
+        $middleware->trustProxies(at: '*');
+
         $middleware->alias([
             'api.token' => App\Http\Middleware\AuthenticateApiToken::class,
         ]);
