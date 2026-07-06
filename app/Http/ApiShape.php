@@ -50,9 +50,15 @@ final class ApiShape
             'radius_meters' => (int) $p->radius_meters,
             'width_meters' => (int) ($p->width_meters ?? $p->radius_meters * 2),
             'height_meters' => (int) ($p->height_meters ?? $p->radius_meters * 2),
-            'block_range_start' => $p->block_range_start,
-            'block_range_end' => $p->block_range_end,
-            'total_blocks' => $p->total_blocks,
+            // Cast explicitly: MySQL returns integer columns as strings
+            // (SQLite in dev returns real ints), and the app's parser
+            // rejects "120" where it expects 120.
+            'block_range_start' => $p->block_range_start !== null
+                ? (int) $p->block_range_start : null,
+            'block_range_end' => $p->block_range_end !== null
+                ? (int) $p->block_range_end : null,
+            'total_blocks' => $p->total_blocks !== null
+                ? (int) $p->total_blocks : null,
             'known_blocks' => (int) ($p->known_blocks ?? $p->blocks_count ?? 0),
             'status' => $p->status,
             'created_by' => $p->created_by !== null ? (string) $p->created_by : null,
