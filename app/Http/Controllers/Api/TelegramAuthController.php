@@ -127,14 +127,30 @@ class TelegramAuthController extends Controller
 
     // -------------------------------------------------------- internals
 
-    /** Handles one Telegram update: a "/start <code>" bot message. */
+    /**
+     * Handles one Telegram update: a "/start <code>" bot message, or a
+     * shared contact (the user tapping the "share phone" button).
+     */
     private function processUpdate(array $update): void
     {
         $message = $update['message'] ?? null;
+        if (! is_array($message)) {
+            return;
+        }
         $text = (string) ($message['text'] ?? '');
         $from = $message['from'] ?? null;
         $chatId = $message['chat']['id'] ?? null;
-        if (! is_array($from) || $chatId === null || ! str_starts_with($text, '/start')) {
+        if (! is_array($from) || $chatId === null) {
+            return;
+        }
+
+        if (is_array($message['contact'] ?? null)) {
+            $this->saveSharedContact($message['contact'], $from, $chatId);
+
+            return;
+        }
+
+        if (! str_starts_with($text, '/start')) {
             return;
         }
 
@@ -165,11 +181,93 @@ class TelegramAuthController extends Controller
             return;
         }
 
+        $this->syncTelegramProfile($user, $from);
+
         $login->forceFill([
             'user_id' => $user->id,
             'token' => AuthToken::issue($user),
         ])->save();
         $this->reply($chatId, 'Signed in as '.($user->display_name ?? 'a new contributor').'. You can return to the app now.');
+
+        if ($user->phone === null) {
+            $this->api('sendMessage', [
+                'chat_id' => $chatId,
+                'text' => 'Optional: share your phone number to add it to your profile.',
+                'reply_markup' => [
+                    'keyboard' => [[[
+                        'text' => '📱 Share my phone number',
+                        'request_contact' => true,
+                    ]]],
+                    'one_time_keyboard' => true,
+                    'resize_keyboard' => true,
+                ],
+            ]);
+        }
+    }
+
+    /** Keeps @username and the profile photo fresh on every sign-in. */
+    private function syncTelegramProfile(User $user, array $from): void
+    {
+        $username = $from['username'] ?? null;
+        if (is_string($username) && $username !== $user->telegram_username) {
+            $user->forceFill(['telegram_username' => $username])->save();
+        }
+
+        try {
+            $photos = $this->api('getUserProfilePhotos', [
+                'user_id' => (int) $from['id'],
+                'limit' => 1,
+            ]);
+            $sizes = $photos['photos'][0] ?? null;
+            if (! is_array($sizes) || $sizes === []) {
+                return;
+            }
+            // Sizes are ordered small → large; ~320px is plenty for the panel.
+            $fileId = $sizes[min(1, count($sizes) - 1)]['file_id'] ?? null;
+            $file = $fileId === null ? null : $this->api('getFile', ['file_id' => $fileId]);
+            $filePath = is_array($file) ? ($file['file_path'] ?? null) : null;
+            if (! is_string($filePath)) {
+                return;
+            }
+            // The download URL embeds the bot token, so fetch the bytes
+            // once and serve the copy from our own public directory.
+            $bytes = Http::timeout(15)
+                ->get('https://api.telegram.org/file/bot'.$this->botToken().'/'.$filePath)
+                ->body();
+            if ($bytes === '') {
+                return;
+            }
+            $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) ?: 'jpg';
+            $relative = 'uploads/avatars/tg_'.$user->telegram_id.'.'.$ext;
+            @mkdir(public_path('uploads/avatars'), 0775, true);
+            file_put_contents(public_path($relative), $bytes);
+            if ($user->photo_url !== $relative) {
+                $user->forceFill(['photo_url' => $relative])->save();
+            }
+        } catch (Throwable) {
+            // The photo is a nice-to-have; never block sign-in on it.
+        }
+    }
+
+    /** The user tapped "share my phone number" in the bot chat. */
+    private function saveSharedContact(array $contact, array $from, int|string $chatId): void
+    {
+        // Only accept the sender's own contact card, not forwarded ones.
+        if ((int) ($contact['user_id'] ?? 0) !== (int) $from['id']) {
+            return;
+        }
+        $user = User::query()->where('telegram_id', (int) $from['id'])->first();
+        $phone = trim((string) ($contact['phone_number'] ?? ''));
+        if ($user === null || $phone === '') {
+            return;
+        }
+
+        $user->forceFill(['phone' => '+'.ltrim($phone, '+')])->save();
+        $this->api('sendMessage', [
+            'chat_id' => $chatId,
+            'text' => 'Phone number saved — thanks!',
+            'reply_markup' => ['remove_keyboard' => true],
+        ]);
     }
 
     /**

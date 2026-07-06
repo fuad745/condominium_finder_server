@@ -20,6 +20,11 @@ class CondominiumResource extends Resource
 {
     protected static ?string $model = Condominium::class;
 
+    // Laravel pluralizes "Condominium" to the Latin "Condominia", which
+    // mismatches this directory's name and makes Filament fall back to
+    // the ugly two-segment slug "condominiums/condominia".
+    protected static ?string $slug = 'condominiums';
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedHomeModern;
 
     protected static string|UnitEnum|null $navigationGroup = 'Moderation';

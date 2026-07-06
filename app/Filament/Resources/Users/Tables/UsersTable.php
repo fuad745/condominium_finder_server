@@ -10,6 +10,7 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
@@ -22,11 +23,27 @@ class UsersTable
         return $table
             ->defaultSort('points', 'desc')
             ->columns([
+                ImageColumn::make('photo_url')
+                    ->label('')
+                    ->circular()
+                    ->imageSize(32)
+                    ->state(fn (User $record): ?string => $record->photo_url !== null
+                        ? asset($record->photo_url) : null),
                 TextColumn::make('display_name')
                     ->label('Name')
                     ->searchable()
                     ->placeholder('—'),
                 TextColumn::make('email')
+                    ->searchable()
+                    ->placeholder('—')
+                    ->toggleable(),
+                TextColumn::make('telegram_username')
+                    ->label('Telegram')
+                    ->formatStateUsing(fn (string $state): string => '@'.$state)
+                    ->searchable()
+                    ->placeholder('—')
+                    ->toggleable(),
+                TextColumn::make('phone')
                     ->searchable()
                     ->placeholder('—')
                     ->toggleable(),

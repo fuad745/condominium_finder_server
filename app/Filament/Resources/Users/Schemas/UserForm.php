@@ -28,9 +28,19 @@ class UserForm
                     // Stored into password_hash by the Create/Edit pages;
                     // leave blank on edit to keep the current password.
                     ->dehydrated(false)
-                    ->requiredOn('create')
+                    ->required(fn (string $operation): bool => $operation === 'create')
                     ->minLength(6)
                     ->helperText('Only used for email sign-in. Leave blank to keep unchanged.'),
+                TextInput::make('telegram_username')
+                    ->label('Telegram username')
+                    ->prefix('@')
+                    ->disabled()
+                    ->dehydrated(false)
+                    ->helperText('Captured automatically on Telegram sign-in.'),
+                TextInput::make('phone')
+                    ->tel()
+                    ->maxLength(32)
+                    ->helperText('Captured when the user shares their contact with the Telegram bot.'),
                 Select::make('role')
                     ->options(['user' => 'User', 'admin' => 'Admin'])
                     ->required()

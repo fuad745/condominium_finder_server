@@ -62,6 +62,9 @@ Route::middleware('api.token')->group(function (): void {
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::patch('/me', [ProfileController::class, 'update']);
     Route::delete('/me', [ProfileController::class, 'destroy']);
+    Route::post('/me/photo', [ProfileController::class, 'uploadPhoto'])
+        ->middleware('throttle:10,15');
+    Route::delete('/me/photo', [ProfileController::class, 'deletePhoto']);
     Route::get('/me/contributions', [ProfileController::class, 'contributions']);
 
     Route::post('/condominiums', [CondominiumController::class, 'store']);

@@ -46,10 +46,10 @@ class AppServiceProvider extends ServiceProvider
                     touch($file);
                 }
             }
-            // The newest table doubles as the "schema is current" probe,
-            // so upgrades also apply pending migrations automatically.
+            // The newest schema change doubles as the "schema is current"
+            // probe, so upgrades also apply pending migrations automatically.
             $hasUsers = Schema::hasTable('users');
-            if ($hasUsers && Schema::hasTable('telegram_logins')) {
+            if ($hasUsers && Schema::hasColumn('users', 'telegram_username')) {
                 return;
             }
             Artisan::call('migrate', ['--force' => true]);

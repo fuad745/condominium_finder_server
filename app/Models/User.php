@@ -23,6 +23,7 @@ final class User extends Authenticatable implements FilamentUser, HasName
 
     protected $fillable = [
         'email', 'display_name', 'auth_provider', 'telegram_id',
+        'telegram_username', 'phone', 'photo_url',
         'role', 'points', 'is_trusted', 'is_banned',
     ];
 
