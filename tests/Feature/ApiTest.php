@@ -90,11 +90,57 @@ it('hides pending blocks from the public endpoints', function (): void {
         ->assertNotFound()->assertJsonPath('error', 'not_found');
 });
 
+it('changes the data version when content changes', function (): void {
+    $project = makeProject();
+
+    $before = $this->getJson('/api/data-version')->assertOk()->json('version');
+    expect($before)->toBeString();
+
+    // Unchanged data → identical fingerprint.
+    expect($this->getJson('/api/data-version')->json('version'))->toBe($before);
+
+    makeBlock($project);
+    expect($this->getJson('/api/data-version')->json('version'))
+        ->not->toBe($before);
+});
+
 it('searches approved projects and blocks', function (): void {
     makeBlock(makeProject());
 
     $results = $this->getJson('/api/search?q=koye')->assertOk()->json();
     expect(collect($results)->pluck('result_type'))->toContain('project', 'block');
+});
+
+it('filters /api/blocks by bbox when given', function (): void {
+    $project = makeProject();
+    makeBlock($project); // 8.9032, 38.8233
+    makeBlock($project, ['block_number' => '900', 'lat' => 9.05, 'lng' => 38.70]);
+
+    $this->getJson('/api/blocks?bbox=8.90,38.82,8.91,38.83')
+        ->assertOk()
+        ->assertJsonCount(1)
+        ->assertJsonPath('0.block_number', '435');
+
+    // Malformed bbox falls back to everything rather than erroring.
+    $this->getJson('/api/blocks?bbox=oops')->assertOk()->assertJsonCount(2);
+});
+
+it('matches search words in any order across combined fields', function (): void {
+    makeBlock(makeProject()); // "Koye Feche Project 16", block 435
+
+    // "<project> <block>" and the reverse both hit the block.
+    foreach (['koye 435', '435 koye'] as $q) {
+        $results = $this->getJson('/api/search?q='.urlencode($q))->assertOk()->json();
+        expect(collect($results)->pluck('result_type'))->toContain('block');
+    }
+
+    // Project name words out of order still match.
+    $results = $this->getJson('/api/search?q='.urlencode('feche koye'))->assertOk()->json();
+    expect(collect($results)->pluck('result_type'))->toContain('project');
+
+    // Condominium results are included too.
+    $results = $this->getJson('/api/search?q=koye')->assertOk()->json();
+    expect(collect($results)->pluck('result_type'))->toContain('condominium');
 });
 
 it('lists every approved block with contributor credit', function (): void {
