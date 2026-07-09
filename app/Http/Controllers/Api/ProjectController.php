@@ -44,17 +44,29 @@ class ProjectController extends Controller
 
     /**
      * GET /api/blocks — every approved block, so the map can pin them
-     * without a project being selected first. Fine at this data size.
+     * without a project being selected first (and cache them for
+     * offline use). An optional `bbox=minLat,minLng,maxLat,maxLng`
+     * keeps the payload viewport-sized once the dataset outgrows
+     * ship-everything.
      */
-    public function allBlocks(): JsonResponse
+    public function allBlocks(Request $request): JsonResponse
     {
-        $blocks = Block::query()
+        $query = Block::query()
             ->with(['project', 'submitter'])
             ->where('status', 'approved')
-            ->whereHas('project', fn ($q) => $q->where('status', 'approved'))
-            ->get();
+            ->whereHas('project', fn ($q) => $q->where('status', 'approved'));
 
-        return response()->json($blocks->map(ApiShape::block(...)));
+        $bbox = array_map(floatval(...), array_filter(
+            explode(',', (string) $request->query('bbox', '')),
+            is_numeric(...),
+        ));
+        if (count($bbox) === 4) {
+            [$minLat, $minLng, $maxLat, $maxLng] = $bbox;
+            $query->whereBetween('lat', [min($minLat, $maxLat), max($minLat, $maxLat)])
+                ->whereBetween('lng', [min($minLng, $maxLng), max($minLng, $maxLng)]);
+        }
+
+        return response()->json($query->get()->map(ApiShape::block(...)));
     }
 
     /** POST /api/projects — pending unless the author is trusted. */
