@@ -30,3 +30,7 @@ Thumbs.db
 
 # Flutter web build copied in for deployment (see README)
 /public/app
+
+# Uploaded release APK (host on server, keep out of git history)
+/public/downloads/*.apk
+!/public/downloads/.gitkeep
