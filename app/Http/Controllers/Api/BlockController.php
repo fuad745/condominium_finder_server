@@ -82,12 +82,16 @@ class BlockController extends Controller
             ], 422);
         }
 
-        $recorded = ! $block->verifications()
-            ->where('user_id', $user->id)
-            ->exists();
-        if ($recorded) {
+        // Insert-first (unique on block_id+user_id): a double-tap or two
+        // concurrent requests can both pass an exists() pre-check, so the
+        // constraint is the only reliable "once per user" arbiter.
+        $recorded = false;
+        try {
             $block->verifications()->create(['user_id' => $user->id]);
+            $recorded = true;
             $user->awardPoints(1);
+        } catch (UniqueConstraintViolationException) {
+            // Already confirmed — idempotent no-op.
         }
 
         $count = $block->verifications()->count();
@@ -112,12 +116,18 @@ class BlockController extends Controller
         $block = Block::query()->where('status', 'approved')->findOrFail($id);
         $user = $request->user();
 
-        $recorded = ! $block->reports()->where('user_id', $user->id)->exists();
-        if ($recorded) {
+        // Insert-first for the same reason as verify(): the unique
+        // constraint, not a racy exists() pre-check, enforces one report
+        // per user.
+        $recorded = false;
+        try {
             $block->reports()->create([
                 'user_id' => $user->id,
                 'reason' => $data['reason'] ?? null,
             ]);
+            $recorded = true;
+        } catch (UniqueConstraintViolationException) {
+            // Already reported — idempotent no-op.
         }
 
         $count = $block->reports()->count();

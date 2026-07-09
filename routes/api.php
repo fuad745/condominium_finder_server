@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\TelegramAuthController;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -27,6 +28,25 @@ Route::get('/blocks/{id}', [BlockController::class, 'show'])->whereNumber('id');
 Route::get('/search', SearchController::class);
 Route::get('/leaderboard', LeaderboardController::class)
     ->middleware('api.token:optional');
+
+// Cheap change-detection fingerprint: clients ping this tiny endpoint
+// and only re-download the full lists when the version string changes.
+// Covers new/approved/deleted content, applied edits, and vote counts.
+Route::get('/data-version', function () {
+    $parts = [
+        DB::table('condominiums')->where('status', 'approved')->count(),
+        DB::table('condominiums')->max('id'),
+        DB::table('projects')->where('status', 'approved')->count(),
+        DB::table('projects')->max('id'),
+        DB::table('blocks')->where('status', 'approved')->count(),
+        DB::table('blocks')->max('id'),
+        DB::table('blocks')->sum('verified_count'),
+        DB::table('blocks')->sum('report_count'),
+        DB::table('block_edits')->max('reviewed_at'),
+        DB::table('area_edits')->max('reviewed_at'),
+    ];
+    return response()->json(['version' => md5(implode('|', $parts))]);
+})->middleware('throttle:60,1');
 
 Route::view('/privacy', 'privacy');
 Route::get('/health', fn () => response()->json([
@@ -67,19 +87,25 @@ Route::middleware('api.token')->group(function (): void {
     Route::delete('/me/photo', [ProfileController::class, 'deletePhoto']);
     Route::get('/me/contributions', [ProfileController::class, 'contributions']);
 
-    Route::post('/condominiums', [CondominiumController::class, 'store']);
-    Route::post('/condominiums/{id}/suggest-area', fn (\Illuminate\Http\Request $r, int $id) => app(CondominiumController::class)->suggestArea($r, 'condominium', $id))
-        ->whereNumber('id');
-    Route::post('/projects/{id}/suggest-area', fn (\Illuminate\Http\Request $r, int $id) => app(CondominiumController::class)->suggestArea($r, 'project', $id))
-        ->whereNumber('id');
     Route::post('/maps-link', [CondominiumController::class, 'resolveMapsLink'])
         ->middleware('throttle:30,60');
-    Route::post('/projects', [ProjectController::class, 'store']);
-    Route::post('/blocks', [BlockController::class, 'store']);
-    Route::post('/blocks/{id}/verify', [BlockController::class, 'verify'])
-        ->whereNumber('id');
-    Route::post('/blocks/{id}/report', [BlockController::class, 'report'])
-        ->whereNumber('id');
-    Route::post('/blocks/{id}/suggest-edit', [BlockController::class, 'suggestEdit'])
-        ->whereNumber('id');
+
+    // Content writes: 20/min per user is far above any human mapping
+    // pace but stops a scripted account from flooding the moderation
+    // queue (or, once trusted, auto-approving garbage in bulk).
+    Route::middleware('throttle:20,1')->group(function (): void {
+        Route::post('/condominiums', [CondominiumController::class, 'store']);
+        Route::post('/condominiums/{id}/suggest-area', fn (\Illuminate\Http\Request $r, int $id) => app(CondominiumController::class)->suggestArea($r, 'condominium', $id))
+            ->whereNumber('id');
+        Route::post('/projects/{id}/suggest-area', fn (\Illuminate\Http\Request $r, int $id) => app(CondominiumController::class)->suggestArea($r, 'project', $id))
+            ->whereNumber('id');
+        Route::post('/projects', [ProjectController::class, 'store']);
+        Route::post('/blocks', [BlockController::class, 'store']);
+        Route::post('/blocks/{id}/verify', [BlockController::class, 'verify'])
+            ->whereNumber('id');
+        Route::post('/blocks/{id}/report', [BlockController::class, 'report'])
+            ->whereNumber('id');
+        Route::post('/blocks/{id}/suggest-edit', [BlockController::class, 'suggestEdit'])
+            ->whereNumber('id');
+    });
 });
